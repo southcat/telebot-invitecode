@@ -1,3 +1,8 @@
+## 第一次开发有问题及时反馈
+email:admin@southcat.net
+
+博客:[南猫](https://southcat.net)
+
 基于[telebot](https://github.com/plutobell/teelebot)开源项目开发。
 
 ## 增加功能
@@ -27,7 +32,7 @@ teelebot 只支持 Python3.x，不支持Python2.x。
 
 #### 一、源码运行 ####
 
-1.克隆或点击下载本项目到本地，保证本机安装有`Python3.x`版本和包`requests`；
+1.克隆或点击下载本项目到本地，保证本机安装有`Python3.x`版本和包`requests`（删除了多余模块不需要了）；
 
 
 
