@@ -1,3 +1,6 @@
+import json
+import time
+
 # -*- coding:utf-8 -*-
 
 from teelebot import Bot
@@ -6,10 +9,12 @@ bot = Bot()
 tips = "有问题联系@southcat解决"
 def invite_code(message):
     sysl = lentj()   #sysl=剩余数量
+    with open(bot.plugin_dir + 'invite_code/usertext.json','r') as f:
+        userjson = json.load(f)
     file2 = str(open(bot.plugin_dir + 'invite_code/usertext.txt','a+'))
     file3 = open(bot.plugin_dir + 'invite_code/usertext.txt','a+')
     status = bot.sendChatAction(message["chat"]["id"], "typing")
-    if yanzheng(message["from"]["id"]) == 0:
+    if yanzheng2(message["from"]["id"]) == 0:
         status = bot.sendChatAction(message["chat"]["id"], "typing")
         bot.sendMessage(message["chat"]["id"], "您已经获取过了哦", "HTML")
         bot.sendMessage(message["chat"]["id"], tips, "HTML")
@@ -22,8 +27,10 @@ def invite_code(message):
             status = bot.sendChatAction(message["chat"]["id"], "typing")
             bot.sendMessage(message["chat"]["id"], invite_code1, "HTML")
             bot.sendMessage(message["chat"]["id"], tips, "HTML")
-            file3.write(str(message["from"]["id"])+"     "+invite_code1 + "\n")
-            file3.close()
+            userid = message["from"]["id"]
+            userjson[userid] = invite_code1
+            with open(bot.plugin_dir + 'invite_code/usertext.json','w') as f1:
+                json.dump(userjson,f1)
 
 
 def code():   #获取验证吗
@@ -55,3 +62,10 @@ def lentj():  #验证码剩余数量统计
     for index, line in enumerate(open(bot.plugin_dir + 'invite_code/code.txt', 'r')):
         count += 1
     return count
+def yanzheng2(user_id): #采用json数据进行用户校验
+    with open(bot.plugin_dir + 'invite_code/usertext.json', 'r') as f:
+        userjson = json.load(f)
+    if str(user_id) in userjson:
+        return 0
+    else:
+        return 1
