@@ -5,7 +5,6 @@ import os
 bot = Bot()
 tips = "有问题联系@southcat解决"
 def invite_code(message):
-    invite_code1 = code()
     sysl = lentj()   #sysl=剩余数量
     file2 = str(open(bot.plugin_dir + 'invite_code/usertext.txt','a+'))
     file3 = open(bot.plugin_dir + 'invite_code/usertext.txt','a+')
@@ -19,6 +18,7 @@ def invite_code(message):
             #status = bot.sendMessage(512466300, "喵帕斯邀请码不足", "HTML")  #数量不足通知模块  如需启动自行修改512466300为你的id并取消注释
             status = bot.sendMessage(message["chat"]["id"], "邀请码数量不足请等待补充", "HTML")
         else:
+            invite_code1 = code()
             status = bot.sendChatAction(message["chat"]["id"], "typing")
             bot.sendMessage(message["chat"]["id"], invite_code1, "HTML")
             bot.sendMessage(message["chat"]["id"], tips, "HTML")
