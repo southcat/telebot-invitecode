@@ -16,7 +16,6 @@ def Menu(message):
                     line_1 = f.readline().strip()[1:]
                 elif i == 1:
                     line_2 = f.readline().strip()[1:]
-            menu_str += "<b>" + line_1 + "</b> - " + line_2 + "%0A%0A"
-    menu_str = "<b>===== Command Menu =====</b>%0A%0A" + menu_str + "%0A%0A" + "开源地址：https://github.com/southcat/telebot-invitecode"
-    status = bot.sendChatAction(message["chat"]["id"], "typing")
-    status = bot.sendMessage(message["chat"]["id"], menu_str, "HTML")
+            menu_str += line_1 + " - " + line_2 + "%0A%0A"
+    menu_str = "===== Command Menu =====%0A%0A" + menu_str + "%0A%0Av" + bot.VERSION
+    status = bot.sendMessage(message["chat"]["id"], menu_str, "html")
