@@ -2,14 +2,19 @@
 from teelebot import Bot
 from teelebot.handler import config
 import os
+import json
 config = config()
 bot = Bot()
 global last_line
+global chongfu
 def add_code(message):
     hx = "\n"
+    chongfu = 0
     if str(message["from"]["id"]) == config["root"]:
         with open(bot.plugin_dir + "add_code/__init__.py", encoding="utf-8") as f:
             h = f.readline()[1:]
+        with open(bot.plugin_dir + 'miaopasi/usertext.json', 'r') as f1:
+            userjson = json.load(f1)
         if len(message["text"]) < len(h):
             status = bot.sendChatAction(message["chat"]["id"], "typing")
             status = bot.sendMessage(message["chat"]["id"], "添加失败，请输入邀请码", "HTML")
