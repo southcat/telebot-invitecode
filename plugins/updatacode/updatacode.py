@@ -4,17 +4,20 @@ import json
 from bs4 import BeautifulSoup
 from teelebot import Bot
 from teelebot.handler import config
+
 bot = Bot()
 global codelist1
 codelist1 = []
-url = ["https://xn--i2ru8q2qg.com/user/invite","https://xn--i2ru8q2qg.com/user/invite?page=2"]
+url = ["https://xn--i2ru8q2qg.com/user/invite", "https://xn--i2ru8q2qg.com/user/invite?page=2"]
 config = config()
 chongfu = 0
+
+
 def updatacode(message):
     if str(message["from"]["id"]) == config["root"]:
         for abc in url:
             a = shauxin(abc)
-            if a ==1:
+            if a == 1:
                 status = bot.sendChatAction(message["chat"]["id"], "typing")
                 bot.sendMessage(message["chat"]["id"], "更新失败cookie失效", "HTML")
             else:
@@ -25,10 +28,11 @@ def updatacode(message):
             file.write(str(code1))
         codelist1.clear()
     else:
-            status = bot.sendChatAction(message["chat"]["id"], "typing")
-            bot.sendMessage(message["chat"]["id"], "您没有权限哦", "HTML")
+        status = bot.sendChatAction(message["chat"]["id"], "typing")
+        bot.sendMessage(message["chat"]["id"], "您没有权限哦", "HTML")
     status = bot.sendChatAction(message["chat"]["id"], "typing")
-    bot.sendMessage(message["chat"]["id"], "当前剩余数量："+str(lentj()), "HTML")
+    bot.sendMessage(message["chat"]["id"], "当前剩余数量：" + str(lentj()), "HTML")
+
 
 def shauxin(urls):
     header = {
@@ -58,12 +62,14 @@ def shauxin(urls):
         with open(bot.plugin_dir + 'invite_code/usertext.json') as f1:
             userjson = json.load(f1)
         for c in code:
-            if http + c in userjson.values():
+            if http + c + n in userjson.values() or http + c + n in codelist1:
                 # print(c + "存在")
                 pass
             else:
                 codelist1.append(http + c + n)
     return 0
+
+
 def lentj():
     count = 0
     for index, line in enumerate(open(bot.plugin_dir + 'invite_code/code.txt', 'r')):
