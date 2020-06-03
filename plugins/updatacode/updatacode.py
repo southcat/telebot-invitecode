@@ -58,7 +58,7 @@ def shauxin(urls):
         return 1
     else:
         n = '\n'
-        http = 'https://xn--i2ru8q2qg.com/'
+        http = 'https://xn--i2ru8q2qg.com'
         with open(bot.plugin_dir + 'invite_code/usertext.json') as f1:
             userjson = json.load(f1)
         for c in code:
