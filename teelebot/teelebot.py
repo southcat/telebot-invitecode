@@ -2,9 +2,9 @@
 '''
 @description:基于Telegram Bot Api 的机器人
 @creation date: 2019-8-13
-@last modify: 2020-5-30
-@author github: plutobell
-@version: 1.3.4_dev
+@last modify: 2020-6-8
+@author github:plutobell
+@version: 1.4.5_dev
 '''
 import time
 import sys
@@ -59,7 +59,22 @@ class Bot(object):
                             message_type = "callback_query_data"
                         elif (message.get("new_chat_members") != None) or (message.get("left_chat_member") != None):
                             message_type = "text"
-                            message["text"] = "/" #default prefix of command
+                            message["text"] = "" #default prefix of command
+                        elif message.get("photo") != None:
+                            message["message_type"] = "photo"
+                            message_type = "message_type"
+                        elif message.get("sticker") != None:
+                            message["message_type"] = "sticker"
+                            message_type = "message_type"
+                        elif message.get("video") != None:
+                            message["message_type"] = "video"
+                            message_type = "message_type"
+                        elif message.get("audio") != None:
+                            message["message_type"] = "audio"
+                            message_type = "message_type"
+                        elif message.get("document") != None:
+                            message["message_type"] = "document"
+                            message_type = "message_type"
                         elif message.get("text") != None:
                             message_type = "text"
                         elif message.get("caption") != None:
@@ -103,6 +118,7 @@ class Bot(object):
 
                 if query_or_message == "callback_query":
                     callback_query = result.get(query_or_message).get("message")
+                    callback_query["click_user"] = result.get(query_or_message)["from"]
                     callback_query["callback_query_id"] = result.get(query_or_message).get("id")
                     callback_query["callback_query_data"] = result.get(query_or_message).get("data")
                     messages.append(callback_query)
@@ -125,7 +141,10 @@ class Bot(object):
         if self.debug is True:
             print(req.text)
 
-        return req.json()
+        if req.json().get("ok") == True:
+            return req.json().get("result")
+        elif req.json().get("ok") == False:
+            return req.json().get("ok")
 
     def getFile(self, file_id): #获取文件id
         command = "getFile"
@@ -169,13 +188,19 @@ class Bot(object):
         if self.debug is True:
             print(req.text)
 
-        return req.json().get("ok")
+        if req.json().get("ok") == True:
+            return req.json().get("result")
+        elif req.json().get("ok") == False:
+            return req.json().get("ok")
 
     def sendVoice(self, chat_id, voice, caption=None, parse_mode="Text", reply_to_message_id=None, reply_markup=None): #发送音频消息 .ogg
         command = "sendVoice"
         if voice[:7] == "http://" or voice[:7] == "https:/":
             file_data = None
             addr = command + "?chat_id=" + str(chat_id) + "&voice=" + voice
+        elif type(voice) == bytes:
+            file_data = {"voice" : voice}
+            addr = command + "?chat_id=" + str(chat_id)
         else:
             file_data = {"voice" : open(voice, 'rb')}
             addr = command + "?chat_id=" + str(chat_id)
@@ -194,7 +219,10 @@ class Bot(object):
         else:
             req = requests.post(self.url + addr, files=file_data)
 
-        return req.json().get("ok")
+        if req.json().get("ok") == True:
+            return req.json().get("result")
+        elif req.json().get("ok") == False:
+            return req.json().get("ok")
 
     def sendAnimation(self, chat_id, animation, caption=None, parse_mode="Text", reply_to_message_id=None, reply_markup=None):
         '''
@@ -204,6 +232,9 @@ class Bot(object):
         if animation[:7] == "http://" or animation[:7] == "https:/":
             file_data = None
             addr = command + "?chat_id=" + str(chat_id) + "&animation=" + animation
+        elif type(animation) == bytes:
+            file_data = {"animation" : animation}
+            addr = command + "?chat_id=" + str(chat_id)
         else:
             file_data = {"animation" : open(animation, 'rb')}
             addr = command + "?chat_id=" + str(chat_id)
@@ -222,7 +253,10 @@ class Bot(object):
         else:
             req = requests.post(self.url + addr, files=file_data)
 
-        return req.json().get("ok")
+        if req.json().get("ok") == True:
+            return req.json().get("result")
+        elif req.json().get("ok") == False:
+            return req.json().get("ok")
 
     def sendAudio(self, chat_id, audio, caption=None, parse_mode="Text", title=None, reply_to_message_id=None, reply_markup=None):
         '''
@@ -232,6 +266,9 @@ class Bot(object):
         if audio[:7] == "http://" or audio[:7] == "https:/":
             file_data = None
             addr = command + "?chat_id=" + str(chat_id) + "&audio=" + audio
+        elif type(audio) == bytes:
+            file_data = {"audio" : audio}
+            addr = command + "?chat_id=" + str(chat_id)
         else:
             file_data = {"audio" : open(audio, 'rb')}
             addr = command + "?chat_id=" + str(chat_id)
@@ -252,7 +289,10 @@ class Bot(object):
         else:
             req = requests.post(self.url + addr, files=file_data)
 
-        return req.json().get("ok")
+        if req.json().get("ok") == True:
+            return req.json().get("result")
+        elif req.json().get("ok") == False:
+            return req.json().get("ok")
 
     def sendPhoto(self, chat_id, photo, caption=None, parse_mode="Text", reply_to_message_id=None, reply_markup=None): #发送图片
         '''
@@ -262,6 +302,9 @@ class Bot(object):
         if photo[:7] == "http://" or photo[:7] == "https:/":
             file_data = None
             addr = command + "?chat_id=" + str(chat_id) + "&photo=" + photo
+        elif type(photo) == bytes:
+            file_data = {"photo" : photo}
+            addr = command + "?chat_id=" + str(chat_id)
         else:
             file_data = {"photo" : open(photo, 'rb')}
             addr = command + "?chat_id=" + str(chat_id)
@@ -269,7 +312,7 @@ class Bot(object):
         if caption != None:
             addr += "&caption=" + caption
         if parse_mode in ("Markdown", "MarkdownV2", "HTML"):
-            addr += "&parse_mode" + parse_mode
+            addr += "&parse_mode=" + parse_mode
         if reply_to_message_id != None:
             addr += "&reply_to_message_id=" + str(reply_to_message_id)
         if reply_markup != None:
@@ -280,7 +323,10 @@ class Bot(object):
         else:
             req = requests.post(self.url + addr, files=file_data)
 
-        return req.json().get("ok")
+        if req.json().get("ok") == True:
+            return req.json().get("result")
+        elif req.json().get("ok") == False:
+            return req.json().get("ok")
 
     def sendVideo(self, chat_id, video, caption=None, parse_mode="Text", reply_to_message_id=None, reply_markup=None):
         '''
@@ -290,6 +336,9 @@ class Bot(object):
         if video[:7] == "http://" or video[:7] == "https:/":
             file_data = None
             addr = command + "?chat_id=" + str(chat_id) + "&video=" + video
+        elif type(video) == bytes:
+            file_data = {"video" : video}
+            addr = command + "?chat_id=" + str(chat_id)
         else:
             file_data = {"video" : open(video, 'rb')}
             addr = command + "?chat_id=" + str(chat_id)
@@ -297,7 +346,7 @@ class Bot(object):
         if caption != None:
             addr += "&caption=" + caption
         if parse_mode in ("Markdown", "MarkdownV2", "HTML"):
-            addr += "&parse_mode" + parse_mode
+            addr += "&parse_mode=" + parse_mode
         if reply_to_message_id != None:
             addr += "&reply_to_message_id=" + str(reply_to_message_id)
         if reply_markup != None:
@@ -308,7 +357,10 @@ class Bot(object):
         else:
             req = requests.post(self.url + addr, files=file_data)
 
-        return req.json().get("ok")
+        if req.json().get("ok") == True:
+            return req.json().get("result")
+        elif req.json().get("ok") == False:
+            return req.json().get("ok")
 
     def sendVideoNote(self, chat_id, video_note, caption=None, parse_mode="Text", reply_to_message_id=None, reply_markup=None):
         '''
@@ -318,6 +370,9 @@ class Bot(object):
         if video_note[:7] == "http://" or video_note[:7] == "https:/":
             file_data = None
             addr = command + "?chat_id=" + str(chat_id) + "&video_note=" + video_note
+        elif type(video_note) == bytes:
+            file_data = {"video_note" : video_note}
+            addr = command + "?chat_id=" + str(chat_id)
         else:
             file_data = {"video_note" : open(video_note, 'rb')}
             addr = command + "?chat_id=" + str(chat_id)
@@ -325,7 +380,7 @@ class Bot(object):
         if caption != None:
             addr += "&caption=" + caption
         if parse_mode in ("Markdown", "MarkdownV2", "HTML"):
-            addr += "&parse_mode" + parse_mode
+            addr += "&parse_mode=" + parse_mode
         if reply_to_message_id != None:
             addr += "&reply_to_message_id=" + str(reply_to_message_id)
         if reply_markup != None:
@@ -336,7 +391,10 @@ class Bot(object):
         else:
             req = requests.post(self.url + addr, files=file_data)
 
-        return req.json().get("ok")
+        if req.json().get("ok") == True:
+            return req.json().get("result")
+        elif req.json().get("ok") == False:
+            return req.json().get("ok")
 
     def sendMediaGroup(self, chat_id, medias, disable_notification=None, reply_to_message_id=None, reply_markup=None): #暂未弄懂格式。
         '''
@@ -360,6 +418,7 @@ class Bot(object):
         media
         caption
         parse_mode
+
         InputMediaVideo:
         type
         media
@@ -383,13 +442,19 @@ class Bot(object):
         headers = {'Content-Type': 'application/json'}
         req = requests.post(self.url + addr, headers=headers, data=json.dumps(medias))
 
-        return req.json().get("ok")
+        if req.json().get("ok") == True:
+            return req.json().get("result")
+        elif req.json().get("ok") == False:
+            return req.json().get("ok")
 
     def sendDocument(self, chat_id, document, caption=None, parse_mode="Text", reply_to_message_id=None, reply_markup=None): #发送文件
         command = "sendDocument"
         if document[:7] == "http://" or document[:7] == "https:/":
             file_data = None
             addr = command + "?chat_id=" + str(chat_id) + "&document=" + document
+        elif type(document) == bytes:
+            file_data = {"document" : document}
+            addr = command + "?chat_id=" + str(chat_id)
         else:
             file_data = {"document" : open(document, 'rb')}
             addr = command + "?chat_id=" + str(chat_id)
@@ -397,7 +462,7 @@ class Bot(object):
         if caption != None:
             addr += "&caption=" + caption
         if parse_mode in ("Markdown", "MarkdownV2", "HTML"):
-            addr += "&parse_mode" + parse_mode
+            addr += "&parse_mode=" + parse_mode
         if reply_to_message_id is not None:
             addr += "&reply_to_message_id=" + str(reply_to_message_id)
         if reply_markup != None:
@@ -408,16 +473,25 @@ class Bot(object):
         else:
             req = requests.post(self.url + addr, files=file_data)
 
-        return req.json().get("ok")
+        if req.json().get("ok") == True:
+            return req.json().get("result")
+        elif req.json().get("ok") == False:
+            return req.json().get("ok")
 
     def leaveChat(self, chat_id): #退出群组
         command = "leaveChat"
         addr = command + "?chat_id=" + str(chat_id)
         req = requests.post(self.url + addr)
 
-        return req.json().get("ok")
+        if req.json().get("ok") == True:
+            return req.json().get("result")
+        elif req.json().get("ok") == False:
+            return req.json().get("ok")
 
-    def getChat(self, chat_id): #获取群组基本信息
+    def getChat(self, chat_id):
+        '''
+        获取群组基本信息
+        '''
         command = "getChat"
         addr = command + "?chat_id=" + str(chat_id)
         req = requests.get(self.url + addr)
@@ -453,7 +527,10 @@ class Bot(object):
         elif req.json().get("ok") == False:
             return req.json().get("ok")
 
-    def getUserProfilePhotos(self, user_id, offset=None, limit=None): #获取用户头像
+    def getUserProfilePhotos(self, user_id, offset=None, limit=None):
+        '''
+        获取用户头像
+        '''
         command = "getUserProfilePhotos"
         addr = command + "?user_id=" + str(user_id)
 
@@ -469,7 +546,10 @@ class Bot(object):
         elif req.json().get("ok") == False:
             return req.json().get("ok")
 
-    def getChatMember(self, uid, chat_id): #获取群组特定用户信息
+    def getChatMember(self, uid, chat_id):
+        '''
+        获取群组特定用户信息
+        '''
         command = "getChatMember"
         addr = command + "?chat_id=" + str(chat_id) + "&user_id=" + str(uid)
         req = requests.get(self.url + addr)
@@ -479,35 +559,59 @@ class Bot(object):
         elif req.json().get("ok") == False:
             return req.json().get("ok")
 
-    def setChatTitle(self, chat_id, title): #设置群组标题
+    def setChatTitle(self, chat_id, title):
+        '''
+        设置群组标题
+        '''
         command = "setChatTitle"
         addr = command + "?chat_id=" + str(chat_id) + "&title=" + str(title)
         req = requests.post(self.url + addr)
 
-        return req.json().get("ok")
+        if req.json().get("ok") == True:
+            return req.json().get("result")
+        elif req.json().get("ok") == False:
+            return req.json().get("ok")
 
-    def setChatDescription(self, chat_id, description): #设置群组简介（测试好像无效。。）
+    def setChatDescription(self, chat_id, description):
+        '''
+        设置群组简介（测试好像无效。。）
+        '''
         command = "setChatDescription"
         addr = command + "?chat_id=" + str(chat_id) + "&description=" + str(description)
         req = requests.post(self.url + addr)
 
-        return req.json().get("ok")
+        if req.json().get("ok") == True:
+            return req.json().get("result")
+        elif req.json().get("ok") == False:
+            return req.json().get("ok")
 
-    def setChatPhoto(self, chat_id, photo): #设置群组头像
+    def setChatPhoto(self, chat_id, photo):
+        '''
+        设置群组头像
+        '''
         command = "setChatPhoto"
         file_data = {"photo" : open(photo, 'rb')}
         addr = command + "?chat_id=" + str(chat_id)
 
         req = requests.post(self.url + addr, files=file_data)
 
-        return req.json().get("ok")
+        if req.json().get("ok") == True:
+            return req.json().get("result")
+        elif req.json().get("ok") == False:
+            return req.json().get("ok")
 
-    def deleteChatPhoto(self, chat_id): #删除群组头像
+    def deleteChatPhoto(self, chat_id):
+        '''
+        删除群组头像
+        '''
         command = "deleteChatPhoto"
         addr = command + "?chat_id=" + str(chat_id)
         req = requests.post(self.url + addr)
 
-        return req.json().get("ok")
+        if req.json().get("ok") == True:
+            return req.json().get("result")
+        elif req.json().get("ok") == False:
+            return req.json().get("ok")
 
     def setChatPermissions(self, chat_id, permissions):
         '''
@@ -528,11 +632,14 @@ class Bot(object):
         addr = command + "?chat_id=" +str(chat_id)
         req = requests.post(self.url + addr, data = json.dumps(permissions))
 
-        return req.json().get("ok")
+        if req.json().get("ok") == True:
+            return req.json().get("result")
+        elif req.json().get("ok") == False:
+            return req.json().get("ok")
 
-    def restrictChatMember(self, uid, chat_id, permissions, until_date=0):
+    def restrictChatMember(self, chat_id, user_id, permissions, until_date=None):
         '''
-        修改用户权限
+        限制群组用户权限
         permissions = {
             'can_send_messages':False,
             'can_send_media_messages':False,
@@ -543,14 +650,23 @@ class Bot(object):
             'can_invite_users':False,
             'can_pin_messages':False
         }
+        until_date format:
+        timestamp + offset
         '''
-        import json
         command = "restrictChatMember"
-        addr = command + "?chat_id=" + str(chat_id) + "&user_id=" + str(uid) + \
-            "&until_date=" + str(until_date)
-        req = requests.post(self.url + addr, data = json.dumps(permissions))
+        addr = command + "?chat_id=" + str(chat_id) + "&user_id=" + str(user_id)
+        if len(permissions) != 8:
+            return False
+        if until_date is not None:
+            until_date = int(time.time()) + int(until_date)
+            addr += "&until_date=" + str(until_date)
 
-        return req.json().get("ok")
+        req = requests.post(self.url + addr, json = permissions)
+
+        if req.json().get("ok") == True:
+            return req.json().get("result")
+        elif req.json().get("ok") == False:
+            return req.json().get("ok")
 
     def promoteChatMember(self, uid, chat_id, can_change_info=None, can_post_messages=None, \
         can_edit_messages=None, can_delete_messages=None, can_invite_users=None, \
@@ -590,22 +706,39 @@ class Bot(object):
 
         req = requests.post(self.url + addr)
 
-        return req.json().get("ok")
+        if req.json().get("ok") == True:
+            return req.json().get("result")
+        elif req.json().get("ok") == False:
+            return req.json().get("ok")
 
-    def pinChatMessage(self, chat_id, message_id, disable_notification=False): #置顶消息
+    def pinChatMessage(self, chat_id, message_id, disable_notification=None):
+        '''
+        置顶消息
+        '''
         command = "pinChatMessage"
-        addr = command + "?chat_id=" + str(chat_id) + "&message_id=" + str(message_id) + \
-            "&disable_notification=" + str(disable_notification)
+        addr = command + "?chat_id=" + str(chat_id) + "&message_id=" + str(message_id)
+        if disable_notification != None:
+            addr += "&disable_notification=" + str(disable_notification)
+
         req = requests.post(self.url + addr)
 
-        return req.json().get("ok")
+        if req.json().get("ok") == True:
+            return req.json().get("result")
+        elif req.json().get("ok") == False:
+            return req.json().get("ok")
 
-    def unpinChatMessage(self,chat_id): #取消置顶消息
+    def unpinChatMessage(self,chat_id):
+        '''
+        取消置顶消息
+        '''
         command = "unpinChatMessage"
         addr = command + "?chat_id=" + str(chat_id)
         req = requests.post(self.url + addr)
 
-        return req.json().get("ok")
+        if req.json().get("ok") == True:
+            return req.json().get("result")
+        elif req.json().get("ok") == False:
+            return req.json().get("ok")
 
     def sendLocation(self, chat_id, latitude, longitude, reply_to_message_id=None, reply_markup=None): #发送地图定位，经纬度
         command = "sendLocation"
@@ -617,7 +750,10 @@ class Bot(object):
 
         req = requests.post(self.url + addr)
 
-        return req.json().get("ok")
+        if req.json().get("ok") == True:
+            return req.json().get("result")
+        elif req.json().get("ok") == False:
+            return req.json().get("ok")
 
     def sendContact(self, chat_id, phone_number, first_name, last_name=None, reply_to_message_id=None, reply_markup=None):
         '''
@@ -634,7 +770,10 @@ class Bot(object):
 
         req = requests.post(self.url + addr)
 
-        return req.json().get("ok")
+        if req.json().get("ok") == True:
+            return req.json().get("result")
+        elif req.json().get("ok") == False:
+            return req.json().get("ok")
 
     def sendVenue(self, chat_id, latitude, longitude, title, address, reply_to_message_id=None, reply_markup=None):
         '''
@@ -650,7 +789,10 @@ class Bot(object):
 
         req = requests.post(self.url + addr)
 
-        return req.json().get("ok")
+        if req.json().get("ok") == True:
+            return req.json().get("result")
+        elif req.json().get("ok") == False:
+            return req.json().get("ok")
 
     def sendChatAction(self, chat_id, action):
         '''
@@ -667,7 +809,10 @@ class Bot(object):
         addr = command + "?chat_id=" + str(chat_id) + "&action=" + str(action)
         req = requests.post(self.url + addr)
 
-        return req.json().get("ok")
+        if req.json().get("ok") == True:
+            return req.json().get("result")
+        elif req.json().get("ok") == False:
+            return req.json().get("ok")
 
     def forwardMessage(self, chat_id, from_chat_id, message_id, disable_notification=None):
         '''
@@ -723,35 +868,6 @@ class Bot(object):
 
         command = "unbanChatMember"
         addr = command + "?chat_id=" + str(chat_id) + "&user_id=" + str(user_id)
-
-        req = requests.post(self.url + addr)
-
-        if req.json().get("ok") == True:
-            return req.json().get("result")
-        elif req.json().get("ok") == False:
-            return req.json().get("ok")
-
-    def restrictChatMember(self, chat_id, user_id, can_change_info, can_post_messages, \
-                        can_edit_messages, can_delete_messages, can_invite_users, \
-                        can_restrict_members, can_pin_messages, can_promote_members, until_date=None):
-        '''
-        限制群组用户权限
-        until_date format:
-        timestamp + offset
-        '''
-        command = "restrictChatMember"
-        addr = command + "?chat_id=" + str(chat_id) + "&user_id=" + str(user_id)
-        addr += "&can_change_info=" + str(can_change_info)
-        addr += "&can_post_messages=" + str(can_post_messages)
-        addr += "&can_edit_messages=" + str(can_edit_messages)
-        addr += "&can_delete_messages=" + str(can_delete_messages)
-        addr += "&can_invite_users=" + str(can_invite_users)
-        addr += "&can_restrict_members=" + str(can_restrict_members)
-        addr += "&can_pin_messages=" + str(can_pin_messages)
-        addr += "&can_promote_members=" + str(can_promote_members)
-        if until_date is not None:
-            until_date = int(time.time()) + int(until_date)
-            addr += "&until_date=" + str(until_date)
 
         req = requests.post(self.url + addr)
 
@@ -851,22 +967,59 @@ class Bot(object):
             return req.json().get("ok")
 
     #Updating messages
-    def editMessageText(self, chat_id, text, message_id=None, inline_message_id=None, \
+    def editMessageText(self, text, chat_id=None, message_id=None, inline_message_id=None, \
             parse_mode=None, disable_web_page_preview=None, reply_markup=None):
         '''
         编辑一条文本消息.成功时，若消息为Bot发送则返回编辑后的消息，其他返回True
+        在未指定inline_message_id的时候chat_id和message_id为必须存在的参数
         '''
         command = "editMessageText"
-        addr = command + "?chat_id=" + str(chat_id)
-        if message_id is not None:
+
+        if inline_message_id == None:
+            if message_id == None or chat_id == None:
+                return False
+
+        if inline_message_id != None:
+            addr = command + "?inline_message_id=" + str(inline_message_id)
+        else:
+            addr = command + "?chat_id=" + str(chat_id)
             addr += "&message_id=" + str(message_id)
-        if inline_message_id is not None:
-            addr += "&inline_message_id=" + str(inline_message_id)
+
         addr += "&text=" + str(text)
-        if parse_mode in ("Markdown", "HTML"):
+        if parse_mode in ("Markdown", "MarkdownV2", "HTML"):
             addr += "&parse_mode=" + str(parse_mode)
         if disable_web_page_preview is not None:
             addr += "&disable_web_page_preview=" + str(disable_web_page_preview)
+        if reply_markup != None:
+            addr += "&reply_markup=" + json.dumps(reply_markup)
+
+        req = requests.post(self.url + addr)
+
+        if req.json().get("ok") == True:
+            return req.json().get("result")
+        elif req.json().get("ok") == False:
+            return req.json()
+
+    def editMessageCaption(self, chat_id=None, message_id=None, inline_message_id=None, caption=None, parse_mode=None, reply_markup=None):
+        '''
+        编辑消息的Caption。成功时，若消息为Bot发送则返回编辑后的消息，其他返回True
+        在未指定inline_message_id的时候chat_id和message_id为必须存在的参数
+        '''
+        command = "editMessageCaption"
+        if inline_message_id == None:
+            if message_id == None or chat_id == None:
+                return False
+
+        if inline_message_id != None:
+            addr = command + "?inline_message_id=" + str(inline_message_id)
+        else:
+            addr = command + "?chat_id=" + str(chat_id)
+            addr += "&message_id=" + str(message_id)
+
+        if caption is not None:
+            addr += "&caption=" + str(caption)
+        if parse_mode in ("Markdown", "MarkdownV2", "HTML"):
+            addr += "&parse_mode=" + str(parse_mode)
         if reply_markup is not None:
             addr += "&reply_markup=" + str(reply_markup)
 
@@ -877,20 +1030,82 @@ class Bot(object):
         elif req.json().get("ok") == False:
             return req.json()
 
-    def editMessageCaption(self, chat_id, message_id, inline_message_id, text, parse_mode, reply_markup):
+    def editMessageMedia(self, media, chat_id=None, message_id=None, inline_message_id=None, reply_markup=None):
         '''
-        编辑消息标题？成功时，若消息为Bot发送则返回编辑后的消息，其他返回True
+        编辑消息媒体
+        在未指定inline_message_id的时候chat_id和message_id为必须存在的参数
+        media format:
+        media = {
+            'media':{
+                    'type': 'photo',
+                    'media': 'http://pic1.win4000.com/pic/d/6a/25a2c0e959.jpg',
+                    'caption': '编辑后的Media'
+            }
+        }
         '''
-        pass
+        command = "editMessageMedia"
+        if inline_message_id == None:
+            if message_id == None or chat_id == None:
+                return False
 
-    def editMessageMedia(self, chat_id, message_id, inline_message_id, media, reply_markup):
-        pass
+        if inline_message_id != None:
+            addr = command + "?inline_message_id=" + str(inline_message_id)
+        else:
+            addr = command + "?chat_id=" + str(chat_id)
+            addr += "&message_id=" + str(message_id)
 
-    def editMessageReplyMarkup(self, chat_id, message_id, inline_message_id, reply_markup):
-        pass
+        if reply_markup != None:
+            addr += "&reply_markup=" + json.dumps(reply_markup)
 
-    def stopPoll(self, chat_id, message_id, reply_markup):
-        pass
+        req = requests.post(self.url + addr, json=media)
+
+        if req.json().get("ok") == True:
+            return req.json().get("result")
+        elif req.json().get("ok") == False:
+            return req.json()
+
+    def editMessageReplyMarkup(self, chat_id=None, message_id=None, inline_message_id=None, reply_markup=None):
+        '''
+        编辑MessageReplyMarkup
+        在未指定inline_message_id的时候chat_id和message_id为必须存在的参数
+        '''
+        command = "editMessageReplyMarkup"
+        if inline_message_id == None:
+            if message_id == None or chat_id == None:
+                return False
+
+        if inline_message_id != None:
+            addr = command + "?inline_message_id=" + str(inline_message_id)
+        else:
+            addr = command + "?chat_id=" + str(chat_id)
+            addr += "&message_id=" + str(message_id)
+
+        if reply_markup != None:
+            addr += "&reply_markup=" + json.dumps(reply_markup)
+
+        req = requests.post(self.url + addr)
+
+        if req.json().get("ok") == True:
+            return req.json().get("result")
+        elif req.json().get("ok") == False:
+            return req.json()
+
+    def stopPoll(self, chat_id, message_id, reply_markup=None):
+        '''
+        停止投票？并返回最终结果
+        '''
+        command = "stopPoll"
+        addr = command + "?chat_id" + str(chat_id) + "&message_id=" + str(message_id)
+
+        if reply_markup != None:
+            addr += "&reply_markup=" + json.dumps(reply_markup)
+
+        req = requests.post(self.url + addr)
+
+        if req.json().get("ok") == True:
+            return req.json().get("result")
+        elif req.json().get("ok") == False:
+            return req.json()
 
     def deleteMessage(self, chat_id, message_id):
         '''
@@ -905,7 +1120,6 @@ class Bot(object):
             return req.json().get("result")
         elif req.json().get("ok") == False:
             return req.json().get("ok")
-
 
 
     #Inline mode
