@@ -13,7 +13,7 @@ def add_code(message):
     if str(message["from"]["id"]) == config["root"]:
         with open(bot.plugin_dir + "add_code/__init__.py", encoding="utf-8") as f:
             h = f.readline()[1:]
-        with open(bot.plugin_dir + 'miaopasi/usertext.json', 'r') as f1:
+        with open(bot.plugin_dir + 'invite_code/usertext.json', 'r') as f1:
             userjson = json.load(f1)
         if len(message["text"]) < len(h):
             status = bot.sendChatAction(message["chat"]["id"], "typing")
