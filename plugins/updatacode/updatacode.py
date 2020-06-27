@@ -2,39 +2,36 @@ import requests
 # import re
 import json
 from bs4 import BeautifulSoup
-from teelebot import Bot
-from teelebot.handler import config
 
-bot = Bot()
 global codelist1
 codelist1 = []
 url = ["https://xn--i2ru8q2qg.com/user/invite", "https://xn--i2ru8q2qg.com/user/invite?page=2"]
-config = config()
+
 chongfu = 0
 
 
-def updatacode(message):
-    if str(message["from"]["id"]) == config["root"]:
+def updatacode(bot,message):
+    if str(message["from"]["id"]) == bot.config["root"]:
         for abc in url:
-            a = shauxin(abc)
+            a = shuaxin(bot,abc)
             if a == 1:
                 status = bot.sendChatAction(message["chat"]["id"], "typing")
-                bot.sendMessage(message["chat"]["id"], "更新失败cookie失效", "HTML")
+                bot.sendMessage(message["chat"]["id"], "更新失败,cookie失效或是遇到防火墙", "HTML")
             else:
                 status = bot.sendChatAction(message["chat"]["id"], "typing")
                 bot.sendMessage(message["chat"]["id"], "更新成功", "HTML")
-        file = open(bot.plugin_dir + 'invite_code/code.txt', 'w+')
-        for code1 in codelist1:
-            file.write(str(code1))
-        codelist1.clear()
+                file = open(bot.plugin_dir + 'invite_code/code.txt', 'w+')
+                for code1 in codelist1:
+                    file.write(str(code1))
+                    codelist1.clear()
     else:
         status = bot.sendChatAction(message["chat"]["id"], "typing")
         bot.sendMessage(message["chat"]["id"], "您没有权限哦", "HTML")
     status = bot.sendChatAction(message["chat"]["id"], "typing")
-    bot.sendMessage(message["chat"]["id"], "当前剩余数量：" + str(lentj()), "HTML")
+    bot.sendMessage(message["chat"]["id"], "当前剩余数量：" + str(lentj(bot=bot)), "HTML")
 
 
-def shauxin(urls):
+def shuaxin(bot,urls):
     header = {
         'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_3) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/81.0.4044.138 Safari/537.36'}
     data = {
@@ -52,9 +49,10 @@ def shauxin(urls):
     codelist = soup.find_all('a', target='_blank')
     # print(codelist)
     code = []
+    cloudflare = 'https://xn--i2ru8q2qg.comhttps://www.cloudflare.com/5xx-error-landing?utm_source=iuam'
     for i in codelist:
         code.append(i.get('href'))
-    if len(code) == 0:
+    if len(code) <= 1:
         return 1
     else:
         n = '\n'
@@ -67,10 +65,10 @@ def shauxin(urls):
                 pass
             else:
                 codelist1.append(http + c + n)
-    return 0
+        return 0
 
 
-def lentj():
+def lentj(bot):
     count = 0
     for index, line in enumerate(open(bot.plugin_dir + 'invite_code/code.txt', 'r')):
         count += 1

@@ -2,174 +2,369 @@
 '''
 @description:基于Telegram Bot Api 的机器人
 @creation date: 2019-8-13
-@last modify: 2020-6-8
+@last modify: 2020-6-27
 @author github:plutobell
-@version: 1.4.5_dev
+@version: 1.8.6_dev
 '''
 import time
 import sys
+import os
 import json
 import importlib
 import threading
-
 import requests
-from .handler import config
 
-config = config()
-requests.adapters.DEFAULT_RETRIES = 5
+from .handler import config, bridge
+from datetime import timedelta
+from traceback import extract_stack
+from concurrent.futures import ThreadPoolExecutor
+from requests.packages.urllib3.exceptions import InsecureRequestWarning
+requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
 
 class Bot(object):
     "机器人的基类"
 
     def __init__(self, key=""):
+        self.config = config()
+
         if key != "":
             self.key = key
+            self.config["key"] = key
         elif key == "":
-            self.key = config["key"]
+            self.key = self.config["key"]
         self.basic_url = "https://api.telegram.org/"
         self.url = self.basic_url + r"bot" + self.key + r"/"
-        self.timeout = config["timeout"]
+        self.webhook = self.config["webhook"]
+        self.timeout = self.config["timeout"]
         self.offset = 0
-        self.debug = config["debug"]
-        self.plugin_dir = config["plugin_dir"]
-        self.plugin_bridge = config["plugin_bridge"]
-        self.VERSION = config["version"]
+        self.debug = self.config["debug"]
+
+        self.plugin_dir = self.config["plugin_dir"]
+        self.plugin_bridge = self.config["plugin_bridge"]
+
+
+        self.VERSION = self.config["version"]
+        self.AUTHOR = self.config["author"]
+
+        self.__start_time = int(time.time())
+        self.__thread_pool = ThreadPoolExecutor(max_workers=int(self.config["pool_size"]))
+        self.__session = self.__connection_session(pool_connections=int(self.config["pool_size"]), pool_maxsize=int(self.config["pool_size"])*2)
+        self.__plugin_info = self.config["plugin_info"]
+
+        del self.config["plugin_info"]
+
+    def __del__(self):
+        self.__thread_pool.shutdown(wait=True)
+        self.__session.close()
+    #teelebot method
+    def __connection_session(self, pool_connections=10, pool_maxsize=10, max_retries=5):
+        session = requests.Session()
+        session.verify = False
+
+        adapter = requests.adapters.HTTPAdapter(pool_connections = pool_connections,
+                pool_maxsize = pool_maxsize, max_retries = max_retries)
+        session.mount('http://', adapter)
+        session.mount('https://', adapter)
+
+        return session
+
+    def __threadpool_exception(self, fur):
+        now_time = time.strftime("%Y/%m/%d %H:%M:%S")
+        if self.debug == True:
+            print("\n\n" + "_" * 19 + " " + str(now_time) + " " + "_" * 19 + "\n")
+            #print(fur.result())
+        elif fur.exception() != None:
+            print("\n\n" + "_" * 19 + " " + str(now_time) + " " + "_" * 19 + "\n")
+            print(fur.result())
 
     def __import_module(self, plugin_name):
         sys.path.append(self.plugin_dir + plugin_name + r"/")
-        Module = importlib.import_module(plugin_name) #模块检测，待完善
+        Module = importlib.import_module(plugin_name) #模块检测
+
+        now_mtime = mtime = os.stat(self.plugin_dir + plugin_name + "/" + plugin_name + ".py").st_mtime
+        if now_mtime != self.__plugin_info[plugin_name]: #插件热更新
+            self.__plugin_info[plugin_name] = now_mtime
+            importlib.reload(Module)
 
         return Module
-    def _run(self):
-        print("机器人开始轮询", "version:" + self.VERSION)
-        #print("debug=" + str(self.debug))
-        plugin_list = []
-        for key in self.plugin_bridge.keys():
-            plugin_list.append(key)
-        while True:
-            try:
-                messages = self.getUpdates() #获取消息队列messages
-                if messages == None or messages == False:
-                    continue
-                for message in messages: #获取单条消息记录message
-                    if message == None:
-                        continue
-                    for plugin in plugin_list:
-                        if message.get("callback_query_id") != None: #callback query
-                            message_type = "callback_query_data"
-                        elif (message.get("new_chat_members") != None) or (message.get("left_chat_member") != None):
-                            message_type = "text"
-                            message["text"] = "" #default prefix of command
-                        elif message.get("photo") != None:
-                            message["message_type"] = "photo"
-                            message_type = "message_type"
-                        elif message.get("sticker") != None:
-                            message["message_type"] = "sticker"
-                            message_type = "message_type"
-                        elif message.get("video") != None:
-                            message["message_type"] = "video"
-                            message_type = "message_type"
-                        elif message.get("audio") != None:
-                            message["message_type"] = "audio"
-                            message_type = "message_type"
-                        elif message.get("document") != None:
-                            message["message_type"] = "document"
-                            message_type = "message_type"
-                        elif message.get("text") != None:
-                            message_type = "text"
-                        elif message.get("caption") != None:
-                            message_type = "caption"
-                        elif message.get("query") != None:
-                            message_type = "query"
-                        else:
-                            continue
-                        if message.get(message_type)[:len(plugin)] == plugin:
-                            Module = self.__import_module(self.plugin_bridge[plugin])
-                            threadObj = threading.Thread(target=getattr(Module, self.plugin_bridge[plugin]), args=[message])
-                            threadObj.setDaemon(True)
-                            threadObj.start()
-                time.sleep(0.2) #经测试，延时0.2s较为合理
-            except KeyboardInterrupt: #判断键盘输入，终止循环
-                sys.exit("程序终止") #退出存在问题，待修复
 
-    #Getting updates
-    def getUpdates(self): #获取消息队列
-        command = "getUpdates"
-        addr = command + "?" + "offset=" + str(self.offset) + "&timeout=" + str(self.timeout)
-        req = requests.get(self.url + addr)
-        #req.keep_alive = False
-        if self.debug is True:
-            print(req.text)
-        if req.json().get("ok") == True:
-            update_ids = []
-            messages = []
-            results = req.json().get("result")
-            if len(results) < 1:
-                return None
-            for result in results:
-                query_or_message = ""
-                if result.get("inline_query"):
-                    query_or_message = "inline_query"
-                elif result.get("callback_query"):
-                    query_or_message = "callback_query"
-                elif result.get("message"):
-                    query_or_message = "message"
-                update_ids.append(result.get("update_id"))
+    def __debug_info(self, result):
+        if self.debug == True and result.get("ok") == False:
+            os.system("") #"玄学"解决Windows下颜色显示失效的问题...
+            stack_info = extract_stack()
+            if len(stack_info) == 8: #插件内
+                print("\033[1;31;40mRequest failed!")
+                print(len(stack_info))
+                print(" From : " + stack_info[-3][2])
+                print(" Path : " + stack_info[5][0])
+                print(" Line : " + str(stack_info[5][1]))
+                print("Method: " + stack_info[6][2])
+                print("Result: " + str(result))
+                print("\033[0m")
+            elif len(stack_info) == 3: #外部调用
+                print("\033[1;31;40mRequest failed!")
+                print(" From : " + stack_info[0][0])
+                print(" Path : " + stack_info[1][0])
+                print(" Line : " + str(stack_info[0][1]))
+                print("Method: " + stack_info[1][2])
+                print("Result: " + str(result))
+                print("\033[0m")
 
-                if query_or_message == "callback_query":
-                    callback_query = result.get(query_or_message).get("message")
-                    callback_query["click_user"] = result.get(query_or_message)["from"]
-                    callback_query["callback_query_id"] = result.get(query_or_message).get("id")
-                    callback_query["callback_query_data"] = result.get(query_or_message).get("data")
-                    messages.append(callback_query)
-                else:
-                    messages.append(result.get(query_or_message))
-            if len(update_ids) >= 1:
-                self.offset = max(update_ids) + 1
-                return messages
+    def _pluginRun(self, bot, message):
+        if message == None:
+            return
+        # if self.debug == True:
+        #     print(message)
+
+        now_plugin_bridge = bridge(self.plugin_dir) #动态装载插件
+        if now_plugin_bridge != self.plugin_bridge:
+            self.plugin_bridge = now_plugin_bridge
+
+        plugin_list = self.plugin_bridge.keys()
+        plugin_bridge = self.plugin_bridge
+
+        chat_id = message["chat"]["id"]
+        chat_type = message["chat"]["type"]
+        if chat_type != "private" and "/pluginctl" in plugin_bridge.keys() and plugin_bridge["/pluginctl"] == "PluginCTL":
+            if os.path.exists(self.plugin_dir + "PluginCTL/db/" + str(chat_id) + ".db"):
+                with open(self.plugin_dir + "PluginCTL/db/" + str(chat_id) + ".db", "r") as f:
+                    plugin_setting = f.read().strip()
+                plugin_list_off = plugin_setting.split(',')
+                plugin_bridge_temp = {}
+                for plugin in plugin_list:
+                    plugin_temp = plugin
+                    if plugin == "" or plugin == " ":
+                        plugin = "nil"
+                    if plugin not in plugin_list_off:
+                        plugin = plugin_temp
+                        plugin_bridge_temp[plugin] = plugin_bridge[plugin]
+                plugin_bridge = plugin_bridge_temp
+                plugin_list = plugin_bridge.keys()
+
+        for plugin in plugin_list:
+            if "callback_query_id" in message.keys(): #callback query
+                message_type = "callback_query_data"
+            elif ("new_chat_members" in message.keys()) or ("left_chat_member" in message.keys()):
+                message_type = "text"
+                message["text"] = "" #default prefix of command
+            elif "photo" in message.keys():
+                message["message_type"] = "photo"
+                message_type = "message_type"
+            elif "sticker" in message.keys():
+                message["message_type"] = "sticker"
+                message_type = "message_type"
+            elif "video" in message.keys():
+                message["message_type"] = "video"
+                message_type = "message_type"
+            elif "audio" in message.keys():
+                message["message_type"] = "audio"
+                message_type = "message_type"
+            elif "document" in message.keys():
+                message["message_type"] = "document"
+                message_type = "message_type"
+            elif "text" in message.keys():
+                message_type = "text"
+            elif "caption" in message.keys():
+                message_type = "caption"
+            elif "query" in message.keys():
+                message_type = "query"
             else:
+                continue
+
+            if message.get(message_type)[:len(plugin)] == plugin:
+                Module = self.__import_module(plugin_bridge[plugin])
+                pluginFunc = getattr(Module, plugin_bridge[plugin])
+                fur = self.__thread_pool.submit(pluginFunc, bot, message)
+                fur.add_done_callback(self.__threadpool_exception)
+
+    def _washUpdates(self, results):
+        '''
+        清洗消息队列
+        results应当是一个列表
+        '''
+        if results == False or len(results) < 1:
+            return None
+        update_ids = []
+        messages = []
+        for result in results:
+            if "update_id" not in result.keys():
                 return None
+            update_ids.append(result["update_id"])
+            query_or_message = ""
+            if result.get("inline_query"):
+                query_or_message = "inline_query"
+            elif result.get("callback_query"):
+                query_or_message = "callback_query"
+            elif result.get("message"):
+                query_or_message = "message"
+            update_ids.append(result.get("update_id"))
+
+            if query_or_message == "callback_query":
+                callback_query = result.get(query_or_message).get("message")
+                callback_query["click_user"] = result.get(query_or_message)["from"]
+                callback_query["callback_query_id"] = result.get(query_or_message).get("id")
+                callback_query["callback_query_data"] = result.get(query_or_message).get("data")
+                messages.append(callback_query)
+            else:
+                messages.append(result.get(query_or_message))
+        if len(update_ids) >= 1:
+            self.offset = max(update_ids) + 1
+            return messages
         elif req.json().get("ok") == False:
             return False
+        else:
+            return None
+
+    def message_deletor(self, time_gap, chat_id, message_id):
+        '''
+        定时删除一条消息，时间范围：[0, 900],单位秒
+        '''
+        if time_gap < 0 or time_gap > 900:
+            return "time_error"
+        else:
+            def message_deletor_func(chat_id, message_id):
+                self.deleteMessage(chat_id=chat_id, message_id=message_id)
+            if time_gap == 0:
+                message_deletor_func(chat_id, message_id)
+            else:
+                timer = threading.Timer(time_gap, message_deletor_func, args=[chat_id, message_id])
+                timer.start()
+            return "ok"
+
+    def uptime(self, time_format="second"):
+        '''
+        获取框架的持续运行时间
+        '''
+        second = int(time.time()) - self.__start_time
+        if time_format == "second":
+            return second
+        elif time_format == "format":
+            format_time = timedelta(seconds=second)
+            return format_time
+        else:
+            return False
+
+    #Getting updates
+    def getUpdates(self, limit=100, allowed_updates=None):
+        '''
+        获取消息队列
+        '''
+        command = "getUpdates"
+        addr = command + "?offset=" + str(self.offset) +\
+            "&limit=" + str(limit) + "&timeout=" + str(self.timeout)
+
+        if allowed_updates != None:
+            with self.__session.get(self.url + addr, json=allowed_updates) as req:
+                self.__debug_info(req.json())
+                if req.json().get("ok") == True:
+                    return req.json().get("result")
+                elif req.json().get("ok") == False:
+                    return req.json().get("ok")
+        else:
+            with self.__session.get(self.url + addr) as req:
+                self.__debug_info(req.json())
+                if req.json().get("ok") == True:
+                    return req.json().get("result")
+                elif req.json().get("ok") == False:
+                    return req.json().get("ok")
+
+    def setWebhook(self, url, certificate=None, max_connections=None, allowed_updates=None):
+        '''
+        设置Webhook
+        Ports currently supported for Webhooks: 443, 80, 88, 8443.
+        '''
+        command = "setWebhook"
+        addr = command + "?url=" + str(url)
+        if max_connections != None:
+            addr += "&max_connections=" + str(max_connections)
+        if allowed_updates != None:
+            addr += "&allowed_updates=" + str(allowed_updates)
+
+        file_data = None
+        if certificate != None:
+            if type(certificate) == bytes:
+                file_data = {"certificate" : certificate}
+            else:
+                file_data = {"certificate" : open(certificate, 'rb')}
+
+        if file_data == None:
+            req = self.__session.post(self.url + addr)
+        else:
+            req = self.__session.post(self.url + addr, files=file_data)
+
+        self.__debug_info(req.json())
+        if req.json().get("ok") == True:
+            return req.json().get("result")
+        elif req.json().get("ok") == False:
+            return req.json()
+
+    def deleteWebhook(self):
+        '''
+        删除设置的Webhook
+        '''
+        command = "deleteWebhook"
+        addr = command
+        with self.__session.post(self.url + addr) as req:
+
+            self.__debug_info(req.json())
+            if req.json().get("ok") == True:
+                return req.json().get("result")
+            elif req.json().get("ok") == False:
+                return req.json().get("ok")
+
+    def getWebhookInfo(self):
+        '''
+        获取当前的Webhook状态
+        '''
+        command = "getWebhookInfo"
+        addr = command
+        with self.__session.post(self.url + addr) as req:
+
+            self.__debug_info(req.json())
+            if req.json().get("ok") == True:
+                return req.json().get("result")
+            elif req.json().get("ok") == False:
+                return req.json().get("ok")
+
 
     #Available methods
     def getMe(self): #获取机器人基本信息
         command = "getMe"
         addr = command + "?" + "offset=" + str(self.offset) + "&timeout=" + str(self.timeout)
-        req = requests.post(self.url + addr)
-        req.keep_alive = False
-        if self.debug is True:
-            print(req.text)
+        with self.__session.post(self.url + addr) as req:
 
-        if req.json().get("ok") == True:
-            return req.json().get("result")
-        elif req.json().get("ok") == False:
-            return req.json().get("ok")
+            self.__debug_info(req.json())
+            if req.json().get("ok") == True:
+                return req.json().get("result")
+            elif req.json().get("ok") == False:
+                return req.json().get("ok")
 
-    def getFile(self, file_id): #获取文件id
+    def getFile(self, file_id):
+        '''
+        获取文件信息
+        '''
         command = "getFile"
         addr = command + "?file_id=" + file_id
-        req = requests.get(self.url + addr)
-        req.keep_alive = False
-        if self.debug is True:
-            print(req.text)
+        with self.__session.post(self.url + addr) as req:
 
-        if req.json().get("ok") == True:
-            return req.json().get("result")
-        elif req.json().get("ok") == False:
-            return req.json().get("ok")
+            self.__debug_info(req.json())
+            if req.json().get("ok") == True:
+                return req.json().get("result")
+            elif req.json().get("ok") == False:
+                return req.json().get("ok")
 
-    def downloadFile(self, file_path, save_path): #下载文件
-        if file_path[:7] == "http://" or file_path[:7] == "https:/":
-            req = requests.get(file_path)
-        else:
-            url = self.basic_url + "file/bot" + self.key + r"/" + file_path
-            req = requests.get(url)
-        file_name = file_path.split('/')[len(file_path.split('/'))-1]
-        with open(save_path + '/' + file_name, "wb") as f:
-            f.write(req.content)
-        if  req.status_code == requests.codes.ok:
-            return True
+    def getFileDownloadPath(self, file_id):
+        '''
+        生成文件下载链接
+        注意：下载链接包含Bot Key
+        '''
+        req = self.getFile(file_id=file_id)
+        if req != False:
+
+            file_path = req["file_path"]
+            file_download_path = self.basic_url + "file/bot" + self.key + r"/" + file_path
+
+            return file_download_path
         else:
             return False
 
@@ -183,15 +378,13 @@ class Bot(object):
         if reply_markup != None:
             addr += "&reply_markup=" + json.dumps(reply_markup)
 
-        req = requests.post(self.url + addr)
-        req.keep_alive = False
-        if self.debug is True:
-            print(req.text)
+        with self.__session.post(self.url + addr) as req:
 
-        if req.json().get("ok") == True:
-            return req.json().get("result")
-        elif req.json().get("ok") == False:
-            return req.json().get("ok")
+            self.__debug_info(req.json())
+            if req.json().get("ok") == True:
+                return req.json().get("result")
+            elif req.json().get("ok") == False:
+                return req.json().get("ok")
 
     def sendVoice(self, chat_id, voice, caption=None, parse_mode="Text", reply_to_message_id=None, reply_markup=None): #发送音频消息 .ogg
         command = "sendVoice"
@@ -201,6 +394,9 @@ class Bot(object):
         elif type(voice) == bytes:
             file_data = {"voice" : voice}
             addr = command + "?chat_id=" + str(chat_id)
+        elif type(voice) == str and '.' not in voice:
+            file_data = None
+            addr = command + "?chat_id=" + str(chat_id) + "&voice=" + voice
         else:
             file_data = {"voice" : open(voice, 'rb')}
             addr = command + "?chat_id=" + str(chat_id)
@@ -215,14 +411,19 @@ class Bot(object):
             addr += "&reply_markup=" + json.dumps(reply_markup)
 
         if file_data == None:
-            req = requests.post(self.url + addr)
+            with self.__session.post(self.url + addr) as req:
+                self.__debug_info(req.json())
+                if req.json().get("ok") == True:
+                    return req.json().get("result")
+                elif req.json().get("ok") == False:
+                    return req.json().get("ok")
         else:
-            req = requests.post(self.url + addr, files=file_data)
-
-        if req.json().get("ok") == True:
-            return req.json().get("result")
-        elif req.json().get("ok") == False:
-            return req.json().get("ok")
+            with self.__session.post(self.url + addr, files=file_data) as req:
+                self.__debug_info(req.json())
+                if req.json().get("ok") == True:
+                    return req.json().get("result")
+                elif req.json().get("ok") == False:
+                    return req.json().get("ok")
 
     def sendAnimation(self, chat_id, animation, caption=None, parse_mode="Text", reply_to_message_id=None, reply_markup=None):
         '''
@@ -235,6 +436,9 @@ class Bot(object):
         elif type(animation) == bytes:
             file_data = {"animation" : animation}
             addr = command + "?chat_id=" + str(chat_id)
+        elif type(animation) == str and '.' not in animation:
+            file_data = None
+            addr = command + "?chat_id=" + str(chat_id) + "&animation=" + animation
         else:
             file_data = {"animation" : open(animation, 'rb')}
             addr = command + "?chat_id=" + str(chat_id)
@@ -249,14 +453,19 @@ class Bot(object):
             addr += "&reply_markup=" + json.dumps(reply_markup)
 
         if file_data == None:
-            req = requests.post(self.url + addr)
+            with self.__session.post(self.url + addr) as req:
+                self.__debug_info(req.json())
+                if req.json().get("ok") == True:
+                    return req.json().get("result")
+                elif req.json().get("ok") == False:
+                    return req.json().get("ok")
         else:
-            req = requests.post(self.url + addr, files=file_data)
-
-        if req.json().get("ok") == True:
-            return req.json().get("result")
-        elif req.json().get("ok") == False:
-            return req.json().get("ok")
+            with self.__session.post(self.url + addr, files=file_data) as req:
+                self.__debug_info(req.json())
+                if req.json().get("ok") == True:
+                    return req.json().get("result")
+                elif req.json().get("ok") == False:
+                    return req.json().get("ok")
 
     def sendAudio(self, chat_id, audio, caption=None, parse_mode="Text", title=None, reply_to_message_id=None, reply_markup=None):
         '''
@@ -269,6 +478,9 @@ class Bot(object):
         elif type(audio) == bytes:
             file_data = {"audio" : audio}
             addr = command + "?chat_id=" + str(chat_id)
+        elif type(audio) == str and '.' not in audio:
+            file_data = None
+            addr = command + "?chat_id=" + str(chat_id) + "&audio=" + audio
         else:
             file_data = {"audio" : open(audio, 'rb')}
             addr = command + "?chat_id=" + str(chat_id)
@@ -285,14 +497,19 @@ class Bot(object):
             addr += "&reply_markup=" + json.dumps(reply_markup)
 
         if file_data == None:
-            req = requests.post(self.url + addr)
+            with self.__session.post(self.url + addr) as req:
+                self.__debug_info(req.json())
+                if req.json().get("ok") == True:
+                    return req.json().get("result")
+                elif req.json().get("ok") == False:
+                    return req.json().get("ok")
         else:
-            req = requests.post(self.url + addr, files=file_data)
-
-        if req.json().get("ok") == True:
-            return req.json().get("result")
-        elif req.json().get("ok") == False:
-            return req.json().get("ok")
+            with self.__session.post(self.url + addr, files=file_data) as req:
+                self.__debug_info(req.json())
+                if req.json().get("ok") == True:
+                    return req.json().get("result")
+                elif req.json().get("ok") == False:
+                    return req.json().get("ok")
 
     def sendPhoto(self, chat_id, photo, caption=None, parse_mode="Text", reply_to_message_id=None, reply_markup=None): #发送图片
         '''
@@ -305,6 +522,9 @@ class Bot(object):
         elif type(photo) == bytes:
             file_data = {"photo" : photo}
             addr = command + "?chat_id=" + str(chat_id)
+        elif type(photo) == str and '.' not in photo:
+            file_data = None
+            addr = command + "?chat_id=" + str(chat_id) + "&photo=" + photo
         else:
             file_data = {"photo" : open(photo, 'rb')}
             addr = command + "?chat_id=" + str(chat_id)
@@ -319,14 +539,19 @@ class Bot(object):
             addr += "&reply_markup=" + json.dumps(reply_markup)
 
         if file_data == None:
-            req = requests.post(self.url + addr)
+            with self.__session.post(self.url + addr) as req:
+                self.__debug_info(req.json())
+                if req.json().get("ok") == True:
+                    return req.json().get("result")
+                elif req.json().get("ok") == False:
+                    return req.json().get("ok")
         else:
-            req = requests.post(self.url + addr, files=file_data)
-
-        if req.json().get("ok") == True:
-            return req.json().get("result")
-        elif req.json().get("ok") == False:
-            return req.json().get("ok")
+            with self.__session.post(self.url + addr, files=file_data) as req:
+                self.__debug_info(req.json())
+                if req.json().get("ok") == True:
+                    return req.json().get("result")
+                elif req.json().get("ok") == False:
+                    return req.json().get("ok")
 
     def sendVideo(self, chat_id, video, caption=None, parse_mode="Text", reply_to_message_id=None, reply_markup=None):
         '''
@@ -339,6 +564,9 @@ class Bot(object):
         elif type(video) == bytes:
             file_data = {"video" : video}
             addr = command + "?chat_id=" + str(chat_id)
+        elif type(video) == str and '.' not in video:
+            file_data = None
+            addr = command + "?chat_id=" + str(chat_id) + "&video=" + video
         else:
             file_data = {"video" : open(video, 'rb')}
             addr = command + "?chat_id=" + str(chat_id)
@@ -353,14 +581,19 @@ class Bot(object):
             addr += "&reply_markup=" + json.dumps(reply_markup)
 
         if file_data == None:
-            req = requests.post(self.url + addr)
+            with self.__session.post(self.url + addr) as req:
+                self.__debug_info(req.json())
+                if req.json().get("ok") == True:
+                    return req.json().get("result")
+                elif req.json().get("ok") == False:
+                    return req.json().get("ok")
         else:
-            req = requests.post(self.url + addr, files=file_data)
-
-        if req.json().get("ok") == True:
-            return req.json().get("result")
-        elif req.json().get("ok") == False:
-            return req.json().get("ok")
+            with self.__session.post(self.url + addr, files=file_data) as req:
+                self.__debug_info(req.json())
+                if req.json().get("ok") == True:
+                    return req.json().get("result")
+                elif req.json().get("ok") == False:
+                    return req.json().get("ok")
 
     def sendVideoNote(self, chat_id, video_note, caption=None, parse_mode="Text", reply_to_message_id=None, reply_markup=None):
         '''
@@ -373,6 +606,9 @@ class Bot(object):
         elif type(video_note) == bytes:
             file_data = {"video_note" : video_note}
             addr = command + "?chat_id=" + str(chat_id)
+        elif type(video_note) == str and '.' not in video_note:
+            file_data = None
+            addr = command + "?chat_id=" + str(chat_id) + "&video_note=" + video_note
         else:
             file_data = {"video_note" : open(video_note, 'rb')}
             addr = command + "?chat_id=" + str(chat_id)
@@ -387,14 +623,19 @@ class Bot(object):
             addr += "&reply_markup=" + json.dumps(reply_markup)
 
         if file_data == None:
-            req = requests.post(self.url + addr)
+            with self.__session.post(self.url + addr) as req:
+                self.__debug_info(req.json())
+                if req.json().get("ok") == True:
+                    return req.json().get("result")
+                elif req.json().get("ok") == False:
+                    return req.json().get("ok")
         else:
-            req = requests.post(self.url + addr, files=file_data)
-
-        if req.json().get("ok") == True:
-            return req.json().get("result")
-        elif req.json().get("ok") == False:
-            return req.json().get("ok")
+            with self.__session.post(self.url + addr, files=file_data) as req:
+                self.__debug_info(req.json())
+                if req.json().get("ok") == True:
+                    return req.json().get("result")
+                elif req.json().get("ok") == False:
+                    return req.json().get("ok")
 
     def sendMediaGroup(self, chat_id, medias, disable_notification=None, reply_to_message_id=None, reply_markup=None): #暂未弄懂格式。
         '''
@@ -440,12 +681,13 @@ class Bot(object):
             addr += "&reply_markup=" + json.dumps(reply_markup)
 
         headers = {'Content-Type': 'application/json'}
-        req = requests.post(self.url + addr, headers=headers, data=json.dumps(medias))
+        with self.__session.post(self.url + addr, headers=headers, data=json.dumps(medias)) as req:
 
-        if req.json().get("ok") == True:
-            return req.json().get("result")
-        elif req.json().get("ok") == False:
-            return req.json().get("ok")
+            self.__debug_info(req.json())
+            if req.json().get("ok") == True:
+                return req.json().get("result")
+            elif req.json().get("ok") == False:
+                return req.json().get("ok")
 
     def sendDocument(self, chat_id, document, caption=None, parse_mode="Text", reply_to_message_id=None, reply_markup=None): #发送文件
         command = "sendDocument"
@@ -455,6 +697,9 @@ class Bot(object):
         elif type(document) == bytes:
             file_data = {"document" : document}
             addr = command + "?chat_id=" + str(chat_id)
+        elif type(document) == str and '.' not in document:
+            file_data = None
+            addr = command + "?chat_id=" + str(chat_id) + "&document=" + document
         else:
             file_data = {"document" : open(document, 'rb')}
             addr = command + "?chat_id=" + str(chat_id)
@@ -469,24 +714,32 @@ class Bot(object):
             addr += "&reply_markup=" + json.dumps(reply_markup)
 
         if file_data == None:
-            req = requests.post(self.url + addr)
-        else:
-            req = requests.post(self.url + addr, files=file_data)
+            with self.__session.post(self.url + addr) as req:
 
-        if req.json().get("ok") == True:
-            return req.json().get("result")
-        elif req.json().get("ok") == False:
-            return req.json().get("ok")
+                self.__debug_info(req.json())
+                if req.json().get("ok") == True:
+                    return req.json().get("result")
+                elif req.json().get("ok") == False:
+                    return req.json().get("ok")
+        else:
+            with self.__session.post(self.url + addr, files=file_data) as req:
+
+                self.__debug_info(req.json())
+                if req.json().get("ok") == True:
+                    return req.json().get("result")
+                elif req.json().get("ok") == False:
+                    return req.json().get("ok")
 
     def leaveChat(self, chat_id): #退出群组
         command = "leaveChat"
         addr = command + "?chat_id=" + str(chat_id)
-        req = requests.post(self.url + addr)
+        with self.__session.post(self.url + addr) as req:
 
-        if req.json().get("ok") == True:
-            return req.json().get("result")
-        elif req.json().get("ok") == False:
-            return req.json().get("ok")
+            self.__debug_info(req.json())
+            if req.json().get("ok") == True:
+                return req.json().get("result")
+            elif req.json().get("ok") == False:
+                return req.json().get("ok")
 
     def getChat(self, chat_id):
         '''
@@ -494,12 +747,13 @@ class Bot(object):
         '''
         command = "getChat"
         addr = command + "?chat_id=" + str(chat_id)
-        req = requests.get(self.url + addr)
+        with self.__session.post(self.url + addr) as req:
 
-        if req.json().get("ok") == True:
-            return req.json().get("result")
-        elif req.json().get("ok") == False:
-            return req.json().get("ok")
+            self.__debug_info(req.json())
+            if req.json().get("ok") == True:
+                return req.json().get("result")
+            elif req.json().get("ok") == False:
+                return req.json().get("ok")
 
     def getChatAdministrators(self, chat_id):
         '''
@@ -507,12 +761,13 @@ class Bot(object):
         '''
         command = "getChatAdministrators"
         addr = command + "?chat_id=" + str(chat_id)
-        req = requests.get(self.url + addr)
+        with self.__session.post(self.url + addr) as req:
 
-        if req.json().get("ok") == True:
-            return req.json().get("result")
-        elif req.json().get("ok") == False:
-            return req.json().get("ok")
+            self.__debug_info(req.json())
+            if req.json().get("ok") == True:
+                return req.json().get("result")
+            elif req.json().get("ok") == False:
+                return req.json().get("ok")
 
     def getChatMembersCount(self, chat_id):
         '''
@@ -520,12 +775,13 @@ class Bot(object):
         '''
         command = "getChatMembersCount"
         addr = command + "?chat_id=" + str(chat_id)
-        req = requests.get(self.url + addr)
+        with self.__session.post(self.url + addr) as req:
 
-        if req.json().get("ok") == True:
-            return req.json().get("result")
-        elif req.json().get("ok") == False:
-            return req.json().get("ok")
+            self.__debug_info(req.json())
+            if req.json().get("ok") == True:
+                return req.json().get("result")
+            elif req.json().get("ok") == False:
+                return req.json().get("ok")
 
     def getUserProfilePhotos(self, user_id, offset=None, limit=None):
         '''
@@ -539,12 +795,13 @@ class Bot(object):
         if limit != None and limit in list(range(1,101)):
             addr += "&limit=" + str(limit)
 
-        req = requests.get(self.url + addr)
+        with self.__session.post(self.url + addr) as req:
 
-        if req.json().get("ok") == True:
-            return req.json().get("result")
-        elif req.json().get("ok") == False:
-            return req.json().get("ok")
+            self.__debug_info(req.json())
+            if req.json().get("ok") == True:
+                return req.json().get("result")
+            elif req.json().get("ok") == False:
+                return req.json().get("ok")
 
     def getChatMember(self, uid, chat_id):
         '''
@@ -552,12 +809,13 @@ class Bot(object):
         '''
         command = "getChatMember"
         addr = command + "?chat_id=" + str(chat_id) + "&user_id=" + str(uid)
-        req = requests.get(self.url + addr)
+        with self.__session.post(self.url + addr) as req:
 
-        if req.json().get("ok") == True:
-            return req.json().get("result")
-        elif req.json().get("ok") == False:
-            return req.json().get("ok")
+            self.__debug_info(req.json())
+            if req.json().get("ok") == True:
+                return req.json().get("result")
+            elif req.json().get("ok") == False:
+                return req.json().get("ok")
 
     def setChatTitle(self, chat_id, title):
         '''
@@ -565,12 +823,13 @@ class Bot(object):
         '''
         command = "setChatTitle"
         addr = command + "?chat_id=" + str(chat_id) + "&title=" + str(title)
-        req = requests.post(self.url + addr)
+        with self.__session.post(self.url + addr) as req:
 
-        if req.json().get("ok") == True:
-            return req.json().get("result")
-        elif req.json().get("ok") == False:
-            return req.json().get("ok")
+            self.__debug_info(req.json())
+            if req.json().get("ok") == True:
+                return req.json().get("result")
+            elif req.json().get("ok") == False:
+                return req.json().get("ok")
 
     def setChatDescription(self, chat_id, description):
         '''
@@ -578,12 +837,13 @@ class Bot(object):
         '''
         command = "setChatDescription"
         addr = command + "?chat_id=" + str(chat_id) + "&description=" + str(description)
-        req = requests.post(self.url + addr)
+        with self.__session.post(self.url + addr) as req:
 
-        if req.json().get("ok") == True:
-            return req.json().get("result")
-        elif req.json().get("ok") == False:
-            return req.json().get("ok")
+            self.__debug_info(req.json())
+            if req.json().get("ok") == True:
+                return req.json().get("result")
+            elif req.json().get("ok") == False:
+                return req.json().get("ok")
 
     def setChatPhoto(self, chat_id, photo):
         '''
@@ -593,12 +853,13 @@ class Bot(object):
         file_data = {"photo" : open(photo, 'rb')}
         addr = command + "?chat_id=" + str(chat_id)
 
-        req = requests.post(self.url + addr, files=file_data)
+        with self.__session.post(self.url + addr, files=file_data) as req:
 
-        if req.json().get("ok") == True:
-            return req.json().get("result")
-        elif req.json().get("ok") == False:
-            return req.json().get("ok")
+            self.__debug_info(req.json())
+            if req.json().get("ok") == True:
+                return req.json().get("result")
+            elif req.json().get("ok") == False:
+                return req.json().get("ok")
 
     def deleteChatPhoto(self, chat_id):
         '''
@@ -606,12 +867,13 @@ class Bot(object):
         '''
         command = "deleteChatPhoto"
         addr = command + "?chat_id=" + str(chat_id)
-        req = requests.post(self.url + addr)
+        with self.__session.post(self.url + addr) as req:
 
-        if req.json().get("ok") == True:
-            return req.json().get("result")
-        elif req.json().get("ok") == False:
-            return req.json().get("ok")
+            self.__debug_info(req.json())
+            if req.json().get("ok") == True:
+                return req.json().get("result")
+            elif req.json().get("ok") == False:
+                return req.json().get("ok")
 
     def setChatPermissions(self, chat_id, permissions):
         '''
@@ -630,12 +892,13 @@ class Bot(object):
         import json
         command = "setChatPermissions"
         addr = command + "?chat_id=" +str(chat_id)
-        req = requests.post(self.url + addr, data = json.dumps(permissions))
+        with self.__session.post(self.url + addr, data = json.dumps(permissions)) as req:
 
-        if req.json().get("ok") == True:
-            return req.json().get("result")
-        elif req.json().get("ok") == False:
-            return req.json().get("ok")
+            self.__debug_info(req.json())
+            if req.json().get("ok") == True:
+                return req.json().get("result")
+            elif req.json().get("ok") == False:
+                return req.json().get("ok")
 
     def restrictChatMember(self, chat_id, user_id, permissions, until_date=None):
         '''
@@ -661,12 +924,13 @@ class Bot(object):
             until_date = int(time.time()) + int(until_date)
             addr += "&until_date=" + str(until_date)
 
-        req = requests.post(self.url + addr, json = permissions)
+        with self.__session.post(self.url + addr, json = permissions) as req:
 
-        if req.json().get("ok") == True:
-            return req.json().get("result")
-        elif req.json().get("ok") == False:
-            return req.json().get("ok")
+            self.__debug_info(req.json())
+            if req.json().get("ok") == True:
+                return req.json().get("result")
+            elif req.json().get("ok") == False:
+                return req.json().get("ok")
 
     def promoteChatMember(self, uid, chat_id, can_change_info=None, can_post_messages=None, \
         can_edit_messages=None, can_delete_messages=None, can_invite_users=None, \
@@ -704,12 +968,13 @@ class Bot(object):
         if can_promote_members != None:
             addr += "&can_promote_members=" + str(can_promote_members)
 
-        req = requests.post(self.url + addr)
+        with self.__session.post(self.url + addr) as req:
 
-        if req.json().get("ok") == True:
-            return req.json().get("result")
-        elif req.json().get("ok") == False:
-            return req.json().get("ok")
+            self.__debug_info(req.json())
+            if req.json().get("ok") == True:
+                return req.json().get("result")
+            elif req.json().get("ok") == False:
+                return req.json().get("ok")
 
     def pinChatMessage(self, chat_id, message_id, disable_notification=None):
         '''
@@ -720,12 +985,13 @@ class Bot(object):
         if disable_notification != None:
             addr += "&disable_notification=" + str(disable_notification)
 
-        req = requests.post(self.url + addr)
+        with self.__session.post(self.url + addr) as req:
 
-        if req.json().get("ok") == True:
-            return req.json().get("result")
-        elif req.json().get("ok") == False:
-            return req.json().get("ok")
+            self.__debug_info(req.json())
+            if req.json().get("ok") == True:
+                return req.json().get("result")
+            elif req.json().get("ok") == False:
+                return req.json().get("ok")
 
     def unpinChatMessage(self,chat_id):
         '''
@@ -733,12 +999,13 @@ class Bot(object):
         '''
         command = "unpinChatMessage"
         addr = command + "?chat_id=" + str(chat_id)
-        req = requests.post(self.url + addr)
+        with self.__session.post(self.url + addr) as req:
 
-        if req.json().get("ok") == True:
-            return req.json().get("result")
-        elif req.json().get("ok") == False:
-            return req.json().get("ok")
+            self.__debug_info(req.json())
+            if req.json().get("ok") == True:
+                return req.json().get("result")
+            elif req.json().get("ok") == False:
+                return req.json().get("ok")
 
     def sendLocation(self, chat_id, latitude, longitude, reply_to_message_id=None, reply_markup=None): #发送地图定位，经纬度
         command = "sendLocation"
@@ -748,12 +1015,13 @@ class Bot(object):
         if reply_markup != None:
             addr += "&reply_markup=" + json.dumps(reply_markup)
 
-        req = requests.post(self.url + addr)
+        with self.__session.post(self.url + addr) as req:
 
-        if req.json().get("ok") == True:
-            return req.json().get("result")
-        elif req.json().get("ok") == False:
-            return req.json().get("ok")
+            self.__debug_info(req.json())
+            if req.json().get("ok") == True:
+                return req.json().get("result")
+            elif req.json().get("ok") == False:
+                return req.json().get("ok")
 
     def sendContact(self, chat_id, phone_number, first_name, last_name=None, reply_to_message_id=None, reply_markup=None):
         '''
@@ -768,12 +1036,13 @@ class Bot(object):
         if reply_markup != None:
             addr += "&reply_markup=" + json.dumps(reply_markup)
 
-        req = requests.post(self.url + addr)
+        with self.__session.post(self.url + addr) as req:
 
-        if req.json().get("ok") == True:
-            return req.json().get("result")
-        elif req.json().get("ok") == False:
-            return req.json().get("ok")
+            self.__debug_info(req.json())
+            if req.json().get("ok") == True:
+                return req.json().get("result")
+            elif req.json().get("ok") == False:
+                return req.json().get("ok")
 
     def sendVenue(self, chat_id, latitude, longitude, title, address, reply_to_message_id=None, reply_markup=None):
         '''
@@ -787,12 +1056,13 @@ class Bot(object):
         if reply_markup != None:
             addr += "&reply_markup=" + json.dumps(reply_markup)
 
-        req = requests.post(self.url + addr)
+        with self.__session.post(self.url + addr) as req:
 
-        if req.json().get("ok") == True:
-            return req.json().get("result")
-        elif req.json().get("ok") == False:
-            return req.json().get("ok")
+            self.__debug_info(req.json())
+            if req.json().get("ok") == True:
+                return req.json().get("result")
+            elif req.json().get("ok") == False:
+                return req.json().get("ok")
 
     def sendChatAction(self, chat_id, action):
         '''
@@ -807,12 +1077,13 @@ class Bot(object):
         '''
         command = "sendChatAction"
         addr = command + "?chat_id=" + str(chat_id) + "&action=" + str(action)
-        req = requests.post(self.url + addr)
+        with self.__session.post(self.url + addr) as req:
 
-        if req.json().get("ok") == True:
-            return req.json().get("result")
-        elif req.json().get("ok") == False:
-            return req.json().get("ok")
+            self.__debug_info(req.json())
+            if req.json().get("ok") == True:
+                return req.json().get("result")
+            elif req.json().get("ok") == False:
+                return req.json().get("ok")
 
     def forwardMessage(self, chat_id, from_chat_id, message_id, disable_notification=None):
         '''
@@ -824,12 +1095,13 @@ class Bot(object):
         if disable_notification != None:
             addr += "&disable_notification=" + str(disable_notification)
 
-        req = requests.post(self.url + addr)
+        with self.__session.post(self.url + addr) as req:
 
-        if req.json().get("ok") == True:
-            return req.json().get("result")
-        elif req.json().get("ok") == False:
-            return req.json().get("ok")
+            self.__debug_info(req.json())
+            if req.json().get("ok") == True:
+                return req.json().get("result")
+            elif req.json().get("ok") == False:
+                return req.json().get("ok")
 
     def kickChatMember(self, chat_id, user_id, until_date=None):
         '''
@@ -845,12 +1117,13 @@ class Bot(object):
         if until_date is None:
             addr = command + "?chat_id=" + str(chat_id) + "&user_id=" + str(user_id)
 
-        req = requests.post(self.url + addr)
+        with self.__session.post(self.url + addr) as req:
 
-        if req.json().get("ok") == True:
-            return req.json().get("result")
-        elif req.json().get("ok") == False:
-            return req.json().get("ok")
+            self.__debug_info(req.json())
+            if req.json().get("ok") == True:
+                return req.json().get("result")
+            elif req.json().get("ok") == False:
+                return req.json().get("ok")
 
     def unbanChatMember(self, chat_id, user_id):
         '''
@@ -869,12 +1142,13 @@ class Bot(object):
         command = "unbanChatMember"
         addr = command + "?chat_id=" + str(chat_id) + "&user_id=" + str(user_id)
 
-        req = requests.post(self.url + addr)
+        with self.__session.post(self.url + addr) as req:
 
-        if req.json().get("ok") == True:
-            return req.json().get("result")
-        elif req.json().get("ok") == False:
-            return req.json().get("ok")
+            self.__debug_info(req.json())
+            if req.json().get("ok") == True:
+                return req.json().get("result")
+            elif req.json().get("ok") == False:
+                return req.json().get("ok")
 
     def setChatAdministratorCustomTitle(self, chat_id, user_id, custom_title):
         '''
@@ -883,12 +1157,13 @@ class Bot(object):
         command = "setChatAdministratorCustomTitle"
         addr = command + "?chat_id=" + str(chat_id) + "&user_id=" + str(user_id) + "&custom_title=" + str(custom_title)
 
-        req = requests.post(self.url + addr)
+        with self.__session.post(self.url + addr) as req:
 
-        if req.json().get("ok") == True:
-            return req.json().get("result")
-        elif req.json().get("ok") == False:
-            return req.json().get("ok")
+            self.__debug_info(req.json())
+            if req.json().get("ok") == True:
+                return req.json().get("result")
+            elif req.json().get("ok") == False:
+                return req.json().get("ok")
 
     def setChatPermissions(self, chat_id, can_change_info, can_post_messages, \
                         can_edit_messages, can_delete_messages, can_invite_users, \
@@ -917,12 +1192,13 @@ class Bot(object):
         addr += "&can_pin_messages=" + str(can_pin_messages)
         addr += "&can_promote_members=" + str(can_promote_members)
 
-        req = requests.post(self.url + addr)
+        with self.__session.post(self.url + addr) as req:
 
-        if req.json().get("ok") == True:
-            return req.json().get("result")
-        elif req.json().get("ok") == False:
-            return req.json().get("ok")
+            self.__debug_info(req.json())
+            if req.json().get("ok") == True:
+                return req.json().get("result")
+            elif req.json().get("ok") == False:
+                return req.json().get("ok")
 
     def exportChatInviteLink(self, chat_id):
         '''
@@ -931,12 +1207,13 @@ class Bot(object):
         command = "exportChatInviteLink"
         addr = command + "?chat_id=" + str(chat_id)
 
-        req = requests.post(self.url + addr)
+        with self.__session.post(self.url + addr) as req:
 
-        if req.json().get("ok") == True:
-            return req.json().get("result")
-        elif req.json().get("ok") == False:
-            return req.json().get("ok")
+            self.__debug_info(req.json())
+            if req.json().get("ok") == True:
+                return req.json().get("result")
+            elif req.json().get("ok") == False:
+                return req.json().get("ok")
 
     def setChatStickerSet(self, chat_id, sticker_set_name):
         '''
@@ -945,12 +1222,13 @@ class Bot(object):
         command = "setChatStickerSet"
         addr = command + "?chat_id=" + str(chat_id) + "&sticker_set_name=" + str(sticker_set_name)
 
-        req = requests.post(self.url + addr)
+        with self.__session.post(self.url + addr) as req:
 
-        if req.json().get("ok") == True:
-            return req.json().get("result")
-        elif req.json().get("ok") == False:
-            return req.json().get("ok")
+            self.__debug_info(req.json())
+            if req.json().get("ok") == True:
+                return req.json().get("result")
+            elif req.json().get("ok") == False:
+                return req.json().get("ok")
 
     def deleteChatStickerSet(self, chat_id):
         '''
@@ -959,12 +1237,13 @@ class Bot(object):
         command = "deleteChatStickerSet"
         addr = command + "?chat_id=" + str(chat_id)
 
-        req = requests.post(self.url + addr)
+        with self.__session.post(self.url + addr) as req:
 
-        if req.json().get("ok") == True:
-            return req.json().get("result")
-        elif req.json().get("ok") == False:
-            return req.json().get("ok")
+            self.__debug_info(req.json())
+            if req.json().get("ok") == True:
+                return req.json().get("result")
+            elif req.json().get("ok") == False:
+                return req.json().get("ok")
 
     #Updating messages
     def editMessageText(self, text, chat_id=None, message_id=None, inline_message_id=None, \
@@ -993,12 +1272,13 @@ class Bot(object):
         if reply_markup != None:
             addr += "&reply_markup=" + json.dumps(reply_markup)
 
-        req = requests.post(self.url + addr)
+        with self.__session.post(self.url + addr) as req:
 
-        if req.json().get("ok") == True:
-            return req.json().get("result")
-        elif req.json().get("ok") == False:
-            return req.json()
+            self.__debug_info(req.json())
+            if req.json().get("ok") == True:
+                return req.json().get("result")
+            elif req.json().get("ok") == False:
+                return req.json().get("ok")
 
     def editMessageCaption(self, chat_id=None, message_id=None, inline_message_id=None, caption=None, parse_mode=None, reply_markup=None):
         '''
@@ -1023,12 +1303,13 @@ class Bot(object):
         if reply_markup is not None:
             addr += "&reply_markup=" + str(reply_markup)
 
-        req = requests.post(self.url + addr)
+        with self.__session.post(self.url + addr) as req:
 
-        if req.json().get("ok") == True:
-            return req.json().get("result")
-        elif req.json().get("ok") == False:
-            return req.json()
+            self.__debug_info(req.json())
+            if req.json().get("ok") == True:
+                return req.json().get("result")
+            elif req.json().get("ok") == False:
+                return req.json().get("ok")
 
     def editMessageMedia(self, media, chat_id=None, message_id=None, inline_message_id=None, reply_markup=None):
         '''
@@ -1057,12 +1338,13 @@ class Bot(object):
         if reply_markup != None:
             addr += "&reply_markup=" + json.dumps(reply_markup)
 
-        req = requests.post(self.url + addr, json=media)
+        with self.__session.post(self.url + addr, json=media) as req:
 
-        if req.json().get("ok") == True:
-            return req.json().get("result")
-        elif req.json().get("ok") == False:
-            return req.json()
+            self.__debug_info(req.json())
+            if req.json().get("ok") == True:
+                return req.json().get("result")
+            elif req.json().get("ok") == False:
+                return req.json()
 
     def editMessageReplyMarkup(self, chat_id=None, message_id=None, inline_message_id=None, reply_markup=None):
         '''
@@ -1083,12 +1365,13 @@ class Bot(object):
         if reply_markup != None:
             addr += "&reply_markup=" + json.dumps(reply_markup)
 
-        req = requests.post(self.url + addr)
+        with self.__session.post(self.url + addr) as req:
 
-        if req.json().get("ok") == True:
-            return req.json().get("result")
-        elif req.json().get("ok") == False:
-            return req.json()
+            self.__debug_info(req.json())
+            if req.json().get("ok") == True:
+                return req.json().get("result")
+            elif req.json().get("ok") == False:
+                return req.json().get("ok")
 
     def stopPoll(self, chat_id, message_id, reply_markup=None):
         '''
@@ -1100,12 +1383,13 @@ class Bot(object):
         if reply_markup != None:
             addr += "&reply_markup=" + json.dumps(reply_markup)
 
-        req = requests.post(self.url + addr)
+        with self.__session.post(self.url + addr) as req:
 
-        if req.json().get("ok") == True:
-            return req.json().get("result")
-        elif req.json().get("ok") == False:
-            return req.json()
+            self.__debug_info(req.json())
+            if req.json().get("ok") == True:
+                return req.json().get("result")
+            elif req.json().get("ok") == False:
+                return req.json().get("ok")
 
     def deleteMessage(self, chat_id, message_id):
         '''
@@ -1114,12 +1398,13 @@ class Bot(object):
         command = "deleteMessage"
         addr = command + "?chat_id=" + str(chat_id) + "&message_id=" + str(message_id)
 
-        req = requests.post(self.url + addr)
+        with self.__session.post(self.url + addr) as req:
 
-        if req.json().get("ok") == True:
-            return req.json().get("result")
-        elif req.json().get("ok") == False:
-            return req.json().get("ok")
+            self.__debug_info(req.json())
+            if req.json().get("ok") == True:
+                return req.json().get("result")
+            elif req.json().get("ok") == False:
+                return req.json().get("ok")
 
 
     #Inline mode
@@ -1141,13 +1426,13 @@ class Bot(object):
         if switch_pm_parameter is not None:
             addr += "&switch_pm_parameter=" + str(switch_pm_parameter)
 
-        headers = {'Content-Type':'application/json'}
-        req = requests.post(self.url + addr, headers=headers, data=json.dumps(results))
+        with self.__session.post(self.url + addr, json=results) as req:
 
-        if req.json().get("ok") == True:
-            return req.json().get("result")
-        elif req.json().get("ok") == False:
-            return req.json()
+            self.__debug_info(req.json())
+            if req.json().get("ok") == True:
+                return req.json().get("result")
+            elif req.json().get("ok") == False:
+                return req.json()
 
     def answerCallbackQuery(self, callback_query_id, text=None, show_alert="false", url=None, cache_time=0):
         '''
@@ -1202,9 +1487,10 @@ class Bot(object):
         if cache_time != 0:
             addr += "&cache_time=" + str(cache_time)
 
-        req = requests.post(self.url + addr)
+        with self.__session.post(self.url + addr) as req:
 
-        if req.json().get("ok") == True:
-            return req.json().get("result")
-        elif req.json().get("ok") == False:
-            return req.json()
+            self.__debug_info(req.json())
+            if req.json().get("ok") == True:
+                return req.json().get("result")
+            elif req.json().get("ok") == False:
+                return req.json().get("ok")
