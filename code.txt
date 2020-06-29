@@ -1,4 +1,0 @@
-管理员：/start
-机器人：请输入信息
-管理员：hasdhkahsdkhaksd
-机器人：已录入
