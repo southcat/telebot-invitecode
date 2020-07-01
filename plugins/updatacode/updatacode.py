@@ -23,7 +23,7 @@ def updatacode(bot,message):
                 file = open(bot.plugin_dir + 'invite_code/code.txt', 'w+')
                 for code1 in codelist1:
                     file.write(str(code1))
-                    codelist1.clear()
+                codelist1.clear()
     else:
         status = bot.sendChatAction(message["chat"]["id"], "typing")
         bot.sendMessage(message["chat"]["id"], "您没有权限哦", "HTML")
