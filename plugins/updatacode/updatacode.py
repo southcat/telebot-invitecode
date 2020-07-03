@@ -22,7 +22,11 @@ def updatacode(bot,message):
                 bot.sendMessage(message["chat"]["id"], "更新成功", "HTML")
                 file = open(bot.plugin_dir + 'invite_code/code.txt', 'w+')
                 for code1 in codelist1:
-                    file.write(str(code1))
+                    if code1 not in file:
+                        file.write(str(code1))
+                    else:
+                        print(code1+"存在")
+                        pass
                 codelist1.clear()
     else:
         status = bot.sendChatAction(message["chat"]["id"], "typing")
