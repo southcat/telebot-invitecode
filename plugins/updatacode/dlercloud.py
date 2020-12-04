@@ -11,7 +11,7 @@ chongfu = 0
 
 
 def updatacode(bot,message):
-    if str(message["from"]["id"]) == bot.config["root"]:
+    if str(message["from"]["id"]) == bot.config["root_id"]:
         for abc in url:
             a = shuaxin(bot,abc)
             if a == 1:
