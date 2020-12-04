@@ -2,7 +2,7 @@ import json
 import os
 def deluser(bot,message):
     hx = "\n"
-    if str(message["from"]["id"]) == bot.config["root_id"]:
+    if str(message["from"]["id"]) == bot.root_id:
         with open(bot.plugin_dir + "deluser/__init__.py", encoding="utf-8") as f:
             h = f.readline()[1:]
         if len(message["text"]) < len(h):

@@ -6,7 +6,7 @@ global chongfu
 def add_code(bot, message):
     hx = "\n"
     chongfu = 0
-    if str(message["from"]["id"]) == bot.config["root_id"]:
+    if str(message["from"]["id"]) == bot.root_id:
         with open(bot.plugin_dir + "add_code/__init__.py", encoding="utf-8") as f:
             h = f.readline()[1:]
         with open(bot.plugin_dir + 'invite_code/usertext.json', 'r') as f1:
